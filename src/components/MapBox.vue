@@ -61,12 +61,275 @@
 </template>
 
 <script>
+import { mapGetters, mapActions } from 'vuex';
+import mapboxgl from 'mapbox-gl';
+import MapboxGeocoder from '@mapbox/mapbox-gl-geocoder';
+import '@mapbox/mapbox-gl-geocoder/dist/mapbox-gl-geocoder.css';
+import { mapboxDirection, mapboxGeocoding } from '../apis/mapbox';
+
 export default {
   name: 'MapBox',
   data() {
     return {
+      distance: 0,
+      duration: 0,
+      price: 0,
+      center: [],
       map: {},
     };
+  },
+  computed: {
+    ...mapGetters(['getPickup', 'getPickupLocation', 'getDestination', 'getDestinationLocation']),
+  },
+  created() {
+    this.access_token = process.env.VUE_APP_MAPBOX_ACCESS_TOKEN;
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(this.showPosition);
+    }
+  },
+  mounted() {
+    this.center = this.center.length > 1 ? this.center : [107.67389, -6.91333];
+    this.createMap();
+  },
+  methods: {
+    ...mapActions(['addTrip']),
+    async makeTrip() {
+      try {
+        // if (this.$store.state.login.isAuthenticated) {
+        console.log('clicked make trip');
+        const payload = {
+          pickup: this.getPickup,
+          pickupLocation: this.getPickupLocation,
+          destination: this.getDestination,
+          destinationLocation: this.getDestinationLocation,
+        };
+        const response = await this.addTrip(payload);
+        this.$toast.success(response);
+        // } else {
+        //   this.$router.push('/login').catch(() => {});
+        // }
+      } catch ({ data }) {
+        this.$toast.error(data);
+      }
+    },
+    showPosition(position) {
+      const cordinates = [position.coords.longitude, position.coords.latitude];
+      if (cordinates) {
+        this.center = cordinates;
+      } else {
+        this.center = [107.67389, -6.91333];
+      }
+      console.log(cordinates);
+    },
+    async createMap() {
+      try {
+        mapboxgl.accessToken = this.access_token;
+        this.map = new mapboxgl.Map({
+          container: 'map',
+          style: 'mapbox://styles/mapbox/streets-v11',
+          center: this.center,
+          zoom: 13,
+          minZoom: 12,
+        });
+
+        // Add geolocate control to the map.
+        const geolocate = new mapboxgl.GeolocateControl({
+          positionOptions: {
+            enableHighAccuracy: true,
+          },
+          showAccuracyCircle: false,
+          // When active the map will receive updates to the device's location as it changes.
+          trackUserLocation: true,
+          // Draw an arrow next to the location dot to indicate which direction
+          // the device is heading.
+          showUserHeading: true,
+        });
+        //
+        this.map.addControl(geolocate, 'bottom-right');
+        this.map.on('load', () => {
+          geolocate.trigger();
+          //! set pickup maybe.
+        });
+        // ? SAVE FOR LATER
+        // geolocate.on('geolocate', () => {
+        //   console.log(geolocate, 'A geolocate event has occurred.');
+        // });
+
+        // Add zoom and rotation controls to the map.
+        this.map.addControl(new mapboxgl.NavigationControl({
+          showCompass: false,
+        }), 'bottom-right');
+
+        // disable map zoom when using scroll
+        // this.map.scrollZoom.disable();
+
+        // geocoder and marker for Pickup.
+        const geocoderDefault = {
+          accessToken: this.access_token,
+          mapboxgl,
+          marker: false,
+          countries: 'id',
+          language: 'id',
+        };
+        const pickupGeocoder = new MapboxGeocoder({
+          ...geocoderDefault,
+          proximity: {
+            latitude: this.getDestination[0],
+            longitude: this.getDestination[1],
+          },
+          placeholder: 'Search for a pick-up',
+        });
+        const pickupMarker = new mapboxgl.Marker({
+          draggable: true,
+          color: '#D80739',
+        });
+        this.map.addControl(pickupGeocoder, 'top-left');
+        pickupGeocoder.on('result', (e) => {
+          pickupMarker
+            .remove()
+            .setLngLat(e.result.center)
+            .addTo(this.map);
+          // this.pickup = e.result.center;
+          this.$store.commit('SET_PICKUP', e.result.center);
+          if (this.getPickup.length > 1 && this.getDestination.length > 1) this.getDirection();
+        });
+        pickupMarker.on('dragend', (ev) => {
+          // this.pickup = Object.values(ev.target.getLngLat());
+          this.$store.commit('SET_PICKUP', Object.values(ev.target.getLngLat()));
+          if (this.getPickup.length > 1 && this.getDestination.length > 1) this.getDirection();
+        });
+        /**
+         * SET OF DESTINATION GEOCODER AND MARKER
+        */
+        const destinationGeocoder = new MapboxGeocoder({
+          ...geocoderDefault,
+          proximity: {
+            latitude: this.getPickup[0],
+            longitude: this.getPickup[1],
+          },
+          placeholder: 'Search for a destination',
+        });
+        this.map.addControl(destinationGeocoder, 'top-left');
+        const destinationMarker = new mapboxgl.Marker({
+          draggable: true,
+          color: '#D80739',
+        });
+        destinationGeocoder.on('result', (e) => {
+          destinationMarker
+            .remove()
+            .setLngLat(e.result.center)
+            .addTo(this.map);
+          // this.destination = e.result.center;
+          this.$store.commit('SET_DESTINATION', e.result.center);
+          if (this.getPickup.length > 1 && this.getDestination.length > 1) this.getDirection();
+        });
+        destinationMarker.on('dragend', (ev) => {
+          // !PR kalo kekejar
+          destinationGeocoder.setPlaceholder('Search for a destinationSearch for a destinationSearch for a destination'); // untuk set input.
+          // this.destination = Object.values(ev.target.getLngLat());
+          this.$store.commit('SET_DESTINATION', Object.values(ev.target.getLngLat()));
+          if (this.getPickup.length > 1 && this.getDestination.length > 1) this.getDirection();
+        });
+        //
+        /**
+         * When user random click, will set as pickup first.
+         * then second click set as destination.
+         */
+        this.map.on('click', (ee) => {
+          if (this.getPickup.length < 2) {
+            pickupMarker
+              .remove()
+              .setLngLat(Object.values(ee.lngLat))
+              .addTo(this.map);
+            this.$store.commit('SET_PICKUP', Object.values(ee.lngLat));
+            //! PR: cari destination, lalu inject ke search bar.
+          } else if (this.getDestination.length < 2) {
+            destinationMarker
+              .remove()
+              .setLngLat(Object.values(ee.lngLat))
+              .addTo(this.map);
+            this.$store.commit('SET_DESTINATION', Object.values(ee.lngLat));
+          }
+          if (this.getPickup.length > 1 && this.getDestination.length > 1) this.getDirection();
+        });
+      } catch (err) {
+        console.log('map error', err);
+      }
+    },
+    async getLocation() {
+      try {
+        const pickup = await mapboxGeocoding({
+          url: `${this.getPickup.join(',')}.json`,
+        });
+        const destination = await mapboxGeocoding({
+          url: `${this.getDestination.join(',')}.json`,
+        });
+        console.log();
+        this.$store.commit('SET_PICKUP_LOCATION', pickup.data.features[0].place_name.split(',').splice(0, 2).join(','));
+        this.$store.commit('SET_DESTINATION_LOCATION', destination.data.features[0].place_name.split(',').splice(0, 2).join(','));
+      } catch (err) {
+        console.log(err);
+      }
+    },
+    async getDirection() {
+      try {
+        const response = await mapboxDirection({
+          url: `${this.getPickup.join(',')};${this.getDestination.join(',')}`,
+        });
+        // remove resources if exist
+        if (this.map.getSource('route')) {
+          this.map
+            .removeLayer('route')
+            .removeSource('route');
+        }
+        const geoJson = {
+          type: 'Feature',
+          properties: {},
+          geometry: response.data.routes[0].geometry,
+        };
+        this.map.addSource('route', {
+          type: 'geojson',
+          data: geoJson,
+        });
+        // kemudian menambah layer dengan sumber data dari route
+        this.map.addLayer({
+          id: 'route',
+          type: 'line',
+          source: 'route',
+          layout: {
+            'line-join': 'round',
+            'line-cap': 'round',
+          },
+          paint: {
+            'line-color': '#888',
+            'line-width': 8,
+          },
+        });
+        this.getLocation();
+        // manual calculation
+        this.distance = (+response.data.routes[0].distance / 1000).toFixed(0);
+        const duration = new Date((+response.data.routes[0].duration * 1000));
+        this.duration = duration.toISOString().split('T')[1].slice(0, 5); // .toISOString().split('T')[1].splice(0);
+        this.price = (this.distance * 1000 + 10000).toFixed(0).slice(0, -3) * 1000;
+
+        const { coordinates } = geoJson.geometry;
+        const bounds = new mapboxgl.LngLatBounds(
+          coordinates[0],
+          coordinates[0],
+        );
+        // Extend the 'LngLatBounds' to include every coordinate in the bounds result.
+        coordinates.forEach((el) => {
+          bounds.extend(el);
+        });
+        this.map.fitBounds(bounds, {
+          padding: {
+            top: 10, bottom: 25, left: 300, right: 5,
+          },
+        });
+      } catch (error) {
+        console.log(error.response);
+      }
+    },
   },
 };
 </script>
