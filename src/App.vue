@@ -13,13 +13,6 @@ html,
 body {
   height: 100%;
 }
-/* body {
-  display: flex;
-  align-items: center;
-  padding-top: 40px;
-  padding-bottom: 40px;
-  background-color: #f5f5f5;
-} */
 
 #app {
   font-family: Avenir, Helvetica, Arial, sans-serif;
