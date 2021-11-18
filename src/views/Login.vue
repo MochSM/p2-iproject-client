@@ -1,9 +1,10 @@
 <template>
   <main class="form-signin">
-    <form>
+    <form @submit.prevent="login">
       <h1 class="h3 mb-3 fw-normal">Please sign in</h1>
       <div class="form-floating">
         <input
+          v-model="email"
           type="email"
           class="form-control"
           id="floatingInput"
@@ -13,6 +14,7 @@
       </div>
       <div class="form-floating">
         <input
+          v-model="password"
           type="password"
           class="form-control"
           id="floatingPassword"
@@ -43,6 +45,8 @@ export default {
   },
   data() {
     return {
+      email: '',
+      password: '',
       params: {
         client_id: '150884543308-iof8m54k8nnp22o4iru0nfd7hk3tj3oo.apps.googleusercontent.com',
       },
@@ -54,7 +58,26 @@ export default {
     };
   },
   methods: {
-    ...mapActions(['googleLogin']),
+    ...mapActions(['doLogin', 'googleLogin']),
+    async login() {
+      const loading = this.$toast.info('Loading, Please wait.', {
+        duration: 0,
+      });
+      try {
+        const { data } = await this.doLogin({
+          email: this.email,
+          password: this.password,
+        });
+        localStorage.setItem('access_token', data.access_token);
+        this.$store.commit('SET_LOGIN_STATUS');
+        this.$router.push('/').catch(() => {});
+        loading.dismiss();
+        this.$toast.success(data.message);
+      } catch (error) {
+        loading.dismiss();
+        this.$toast.error(error.response.data.message);
+      }
+    },
     async onSuccess(googleUser) {
       const loading = this.$toast.info('Loading, Please wait.', {
         duration: 0,

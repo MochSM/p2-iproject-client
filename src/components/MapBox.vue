@@ -110,6 +110,7 @@
         <div class="card-body border-bottom"
           v-if="paymentMode === true && getTrips[0].status !== 'payment_pending'">
           <form class="row">
+            <h4>Input your credit card to pay</h4>
             <div class="mb-3">
               <input type="number"
                 v-model="payment.card_number"
@@ -140,8 +141,8 @@
           </form>
         </div>
         <div class="d-grid gap-2 px-3 py-3">
-          <button v-if="!isDriver"
-            class="btn btn-primary" @click="cancelTrip" type="button">Cancel Trip</button>
+          <!-- <button v-if="!isDriver"
+            class="btn btn-primary" @click="cancelTrip" type="button">Cancel Trip</button> -->
           <!-- ini gak ada kalo driver  -->
           <button
             v-if="paymentMode === false && getTrips[0].status === 'accepted' "
@@ -289,7 +290,11 @@ export default {
       }
     },
     acceptTrip() {
-      this.$store.dispatch('acceptTrip', this.getTrips[0].id);
+      this.$store.dispatch('acceptTrip', this.getTrips[0].id)
+        .then(() => {})
+        .catch(({ data }) => {
+          this.$toast.error(data.message);
+        });
       this.socket.emit('update trip');
     },
     showPosition(position) {

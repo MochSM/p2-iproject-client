@@ -10,6 +10,13 @@ export default {
     },
   },
   actions: {
+    doLogin(context, payload) {
+      return axios({
+        url: 'auth/login',
+        method: 'POST',
+        data: payload,
+      });
+    },
     googleLogin(context, payload) {
       return axios({
         url: 'auth/google-signin',
