@@ -69,6 +69,9 @@ export default {
           id_token: googleUser.getAuthResponse().id_token,
         });
         localStorage.setItem('access_token', data.access_token);
+        localStorage.setItem('user_id', data.user_id);
+        localStorage.setItem('is_driver', data.is_driver);
+
         this.$store.commit('SET_LOGIN_STATUS');
         this.$router.push('/').catch(() => {});
         loading.dismiss();
